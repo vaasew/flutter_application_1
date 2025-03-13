@@ -105,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       var rawData = snapshot.data!.snapshot.value;
-      print("Raw Data: $rawData"); // Debugging: Print raw Firebase data
+      print("Raw Data: $rawData");
 
       if (rawData is! Map) {
         return Center(child: Text("Unexpected data format"));
