@@ -4,6 +4,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
   @override
   _DashboardScreenState createState() => _DashboardScreenState();
 }
@@ -109,7 +111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Center(child: Text("Unexpected data format"));
       }
 
-      Map<dynamic, dynamic> logs = rawData as Map<dynamic, dynamic>;
+      Map<dynamic, dynamic> logs = rawData;
       if (logs.isEmpty) {
         return Center(child: Text("No previous logs found"));
       }
