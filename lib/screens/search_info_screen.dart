@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 
 class SearchInfoScreen extends StatefulWidget {
   const SearchInfoScreen({Key? key}) : super(key: key);
@@ -39,6 +38,7 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
         Map<String, dynamic> doctorData = Map<String, dynamic>.from(
           doctorSnapshot.value as Map,
         );
+
         setState(() {
           doctorName = doctorData['name'] ?? "Unknown";
           specialization = doctorData['spec'] ?? "Not Available";
@@ -46,34 +46,46 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
           numberOfPatients = patientIds.length;
         });
 
+        print("Patient IDs: $patientIds"); // Debug: Check Patient IDs
         fetchPatientData();
       }
     } catch (e) {
       setState(() {
         doctorName = "Error loading doctor data";
       });
-      print("Error: $e");
+      print("Error fetching doctor data: $e");
     }
   }
 
   Future<void> fetchPatientData() async {
     try {
+      allPatientData.clear(); // Clear previous data to avoid duplicates
+      filteredPatients.clear();
+
       for (String patientId in patientIds) {
+        print("Fetching patient data for $patientId");
+
         DatabaseReference patientRef = FirebaseDatabase.instance.ref(
           'patients/$patientId',
         );
         DataSnapshot patientSnapshot = await patientRef.get();
 
         if (patientSnapshot.exists) {
+          print("Data fetched for $patientId: ${patientSnapshot.value}");
           Map<String, dynamic> patientData = Map<String, dynamic>.from(
             patientSnapshot.value as Map,
           );
+
           setState(() {
             allPatientData.add({...patientData, 'id': patientId});
+            filteredPatients = List.from(
+              allPatientData,
+            ); // Ensure UI updates with all data
           });
+        } else {
+          print("No data found for patient: $patientId");
         }
       }
-      filteredPatients = allPatientData;
     } catch (e) {
       print("Error fetching patient data: $e");
     }
@@ -177,16 +189,6 @@ class PatientDetailsScreen extends StatelessWidget {
     return age;
   }
 
-  String formatDateTime(String timestamp) {
-    try {
-      int timeInMilliseconds = int.parse(timestamp);
-      final dateTime = DateTime.fromMillisecondsSinceEpoch(timeInMilliseconds);
-      return DateFormat('yyyy-MM-dd HH:mm:ss').format(dateTime);
-    } catch (e) {
-      return "Invalid Timestamp";
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -206,22 +208,6 @@ class PatientDetailsScreen extends StatelessWidget {
           );
           int age = calculateAge(patientData['dob'] ?? "0000-00-00");
 
-          // Sorting logs in descending order of timestamp
-          List<Map<String, dynamic>> logs = [];
-          if (patientData.containsKey('logs')) {
-            logs =
-                patientData['logs'].values
-                    .map<Map<String, dynamic>>(
-                      (log) => Map<String, dynamic>.from(log),
-                    )
-                    .toList();
-            logs.sort(
-              (a, b) => int.parse(
-                b['timestamp'],
-              ).compareTo(int.parse(a['timestamp'])),
-            );
-          }
-
           return Padding(
             padding: const EdgeInsets.all(16.0),
             child: SingleChildScrollView(
@@ -237,50 +223,6 @@ class PatientDetailsScreen extends StatelessWidget {
                     "Fitness Level: ${patientData['fitness_level'] ?? 'N/A'}",
                   ),
                   Text("Blood Type: ${patientData['blood_type'] ?? 'N/A'}"),
-                  if (patientData.containsKey('health_data')) ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      "Current Vitals:",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      "Heart Rate: ${patientData['health_data']['heart_rate']} BPM",
-                    ),
-                    Text(
-                      "Temperature: ${patientData['health_data']['temperature']} °C",
-                    ),
-                    Text("SpO2: ${patientData['health_data']['SpO2']}%"),
-                  ],
-                  if (logs.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      "Patient Alert Logs :",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    for (var log in logs)
-                      Card(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        child: ListTile(
-                          title: Text(
-                            (log['issues_detected'] as List<dynamic>).join(
-                              ', ',
-                            ),
-                          ),
-                          subtitle: Text(
-                            "Heart Rate: ${log['heart_rate']} BPM, "
-                            "Temperature: ${log['temperature']} °C, "
-                            "SpO2: ${log['SpO2']}%\n"
-                            "Timestamp: ${formatDateTime(log['timestamp'])}",
-                          ),
-                        ),
-                      ),
-                  ],
                 ],
               ),
             ),
