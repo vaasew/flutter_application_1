@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'patient_vitals_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 class SearchInfoScreen extends StatefulWidget {
-  const SearchInfoScreen({super.key});
+  const SearchInfoScreen({Key? key}) : super(key: key);
 
   @override
   _SearchInfoScreenState createState() => _SearchInfoScreenState();
@@ -12,11 +12,13 @@ class SearchInfoScreen extends StatefulWidget {
 
 class _SearchInfoScreenState extends State<SearchInfoScreen> {
   User? doctor = FirebaseAuth.instance.currentUser;
-  String doctorName = "";
-  String doctorSpecialization = "";
+  String doctorName = "Loading...";
+  String specialization = "Loading...";
   int numberOfPatients = 0;
-  List<Map<String, dynamic>> patientsList = [];
-  List<Map<String, dynamic>> searchResults = [];
+  List<String> patientIds = [];
+  List<Map<String, dynamic>> allPatientData = [];
+  List<Map<String, dynamic>> filteredPatients = [];
+  TextEditingController searchController = TextEditingController();
 
   @override
   void initState() {
@@ -27,98 +29,263 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
   Future<void> fetchDoctorInfo() async {
     if (doctor == null) return;
 
-    final doctorRef = FirebaseDatabase.instance.ref('doctors/${doctor!.uid}');
-    final doctorSnapshot = await doctorRef.get();
+    try {
+      DatabaseReference doctorRef = FirebaseDatabase.instance.ref(
+        'doctors/${doctor!.uid}',
+      );
+      DataSnapshot doctorSnapshot = await doctorRef.get();
 
-    if (doctorSnapshot.exists) {
-      final data = doctorSnapshot.value as Map<String, dynamic>;
-      setState(() {
-        doctorName = data['name'] ?? "Unknown";
-        doctorSpecialization = data['spec'] ?? "Not specified";
-        numberOfPatients = (data['patients'] as List<dynamic>?)?.length ?? 0;
-      });
+      if (doctorSnapshot.exists) {
+        Map<String, dynamic> doctorData = Map<String, dynamic>.from(
+          doctorSnapshot.value as Map,
+        );
+        setState(() {
+          doctorName = doctorData['name'] ?? "Unknown";
+          specialization = doctorData['spec'] ?? "Not Available";
+          patientIds = List<String>.from(doctorData['patients'] ?? []);
+          numberOfPatients = patientIds.length;
+        });
 
-      // Fetch all patient data
-      if (data['patients'] != null) {
-        for (String patientId in data['patients']) {
-          final patientRef = FirebaseDatabase.instance.ref(
-            'patients/$patientId',
-          );
-          final patientSnapshot = await patientRef.get();
-          if (patientSnapshot.exists) {
-            final patientData = patientSnapshot.value as Map<String, dynamic>;
-            patientsList.add({...patientData, 'id': patientId});
-          }
-        }
+        fetchPatientData();
       }
+    } catch (e) {
+      setState(() {
+        doctorName = "Error loading doctor data";
+      });
+      print("Error: $e");
     }
   }
 
-  void searchPatients(String query) {
-    setState(() {
-      searchResults =
-          patientsList
-              .where(
-                (patient) => (patient['name'] as String).toLowerCase().contains(
-                  query.toLowerCase(),
-                ),
-              )
-              .toList();
-    });
+  Future<void> fetchPatientData() async {
+    try {
+      for (String patientId in patientIds) {
+        DatabaseReference patientRef = FirebaseDatabase.instance.ref(
+          'patients/$patientId',
+        );
+        DataSnapshot patientSnapshot = await patientRef.get();
+
+        if (patientSnapshot.exists) {
+          Map<String, dynamic> patientData = Map<String, dynamic>.from(
+            patientSnapshot.value as Map,
+          );
+          setState(() {
+            allPatientData.add({...patientData, 'id': patientId});
+          });
+        }
+      }
+      filteredPatients = allPatientData;
+    } catch (e) {
+      print("Error fetching patient data: $e");
+    }
   }
 
-  void navigateToPatient(String patientId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PatientVitalsScreen(patientId: patientId),
-      ),
-    );
+  void searchPatient(String query) {
+    setState(() {
+      filteredPatients =
+          allPatientData.where((patient) {
+            String name = patient['name']?.toLowerCase() ?? "";
+            return name.contains(query.toLowerCase());
+          }).toList();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Doctor Name: $doctorName",
-            style: const TextStyle(fontSize: 18),
-          ),
-          Text(
-            "Specialization: $doctorSpecialization",
-            style: const TextStyle(fontSize: 18),
-          ),
-          Text(
-            "Number of Patients: $numberOfPatients",
-            style: const TextStyle(fontSize: 18),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Search for a patient',
-              border: OutlineInputBorder(),
+    return Scaffold(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Doctor Name: $doctorName",
+              style: const TextStyle(fontSize: 18),
             ),
-            onChanged: searchPatients,
-          ),
-          const SizedBox(height: 20),
-          searchResults.isEmpty
-              ? const Text("No patients found")
-              : ListView.builder(
-                shrinkWrap: true,
-                itemCount: searchResults.length,
-                itemBuilder: (context, index) {
-                  final patient = searchResults[index];
-                  return ListTile(
-                    title: Text(patient['name']),
-                    subtitle: Text("ID: ${patient['id']}"),
-                    onTap: () => navigateToPatient(patient['id']),
-                  );
-                },
+            Text(
+              "Specialization: $specialization",
+              style: const TextStyle(fontSize: 18),
+            ),
+            Text(
+              "Number of Patients: $numberOfPatients",
+              style: const TextStyle(fontSize: 18),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: searchController,
+              onChanged: searchPatient,
+              decoration: InputDecoration(
+                labelText: 'Search for a patient',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-        ],
+            ),
+            const SizedBox(height: 20),
+            filteredPatients.isEmpty
+                ? const Text(
+                  "No patients found",
+                  style: TextStyle(color: Colors.red),
+                )
+                : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: filteredPatients.length,
+                  itemBuilder: (context, index) {
+                    var patient = filteredPatients[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      child: ListTile(
+                        title: Text("Name: ${patient['name']}"),
+                        subtitle: Text("Patient ID: ${patient['id']}"),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (context) => PatientDetailsScreen(
+                                    patientId: patient['id'],
+                                  ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PatientDetailsScreen extends StatelessWidget {
+  final String patientId;
+
+  const PatientDetailsScreen({Key? key, required this.patientId})
+    : super(key: key);
+
+  int calculateAge(String dob) {
+    DateTime birthDate = DateTime.parse(dob);
+    DateTime currentDate = DateTime.now();
+    int age = currentDate.year - birthDate.year;
+    if (currentDate.month < birthDate.month ||
+        (currentDate.month == birthDate.month &&
+            currentDate.day < birthDate.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  String formatDateTime(String timestamp) {
+    try {
+      int timeInMilliseconds = int.parse(timestamp);
+      final dateTime = DateTime.fromMillisecondsSinceEpoch(timeInMilliseconds);
+      return DateFormat('yyyy-MM-dd HH:mm:ss').format(dateTime);
+    } catch (e) {
+      return "Invalid Timestamp";
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Patient Details')),
+      body: FutureBuilder<DataSnapshot>(
+        future: FirebaseDatabase.instance.ref('patients/$patientId').get(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data?.value == null) {
+            return const Center(child: Text("Patient data not found."));
+          }
+
+          Map<String, dynamic> patientData = Map<String, dynamic>.from(
+            snapshot.data!.value as Map,
+          );
+          int age = calculateAge(patientData['dob'] ?? "0000-00-00");
+
+          // Sorting logs in descending order of timestamp
+          List<Map<String, dynamic>> logs = [];
+          if (patientData.containsKey('logs')) {
+            logs =
+                patientData['logs'].values
+                    .map<Map<String, dynamic>>(
+                      (log) => Map<String, dynamic>.from(log),
+                    )
+                    .toList();
+            logs.sort(
+              (a, b) => int.parse(
+                b['timestamp'],
+              ).compareTo(int.parse(a['timestamp'])),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Name: ${patientData['name']}"),
+                  Text("Age: $age"),
+                  Text("Sex: ${patientData['sex'] ?? 'N/A'}"),
+                  Text("Height: ${patientData['height'] ?? 'N/A'} cm"),
+                  Text("Weight: ${patientData['weight'] ?? 'N/A'} kg"),
+                  Text(
+                    "Fitness Level: ${patientData['fitness_level'] ?? 'N/A'}",
+                  ),
+                  Text("Blood Type: ${patientData['blood_type'] ?? 'N/A'}"),
+                  if (patientData.containsKey('health_data')) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Current Vitals:",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      "Heart Rate: ${patientData['health_data']['heart_rate']} BPM",
+                    ),
+                    Text(
+                      "Temperature: ${patientData['health_data']['temperature']} °C",
+                    ),
+                    Text("SpO2: ${patientData['health_data']['SpO2']}%"),
+                  ],
+                  if (logs.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Patient Alert Logs :",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    for (var log in logs)
+                      Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        child: ListTile(
+                          title: Text(
+                            (log['issues_detected'] as List<dynamic>).join(
+                              ', ',
+                            ),
+                          ),
+                          subtitle: Text(
+                            "Heart Rate: ${log['heart_rate']} BPM, "
+                            "Temperature: ${log['temperature']} °C, "
+                            "SpO2: ${log['SpO2']}%\n"
+                            "Timestamp: ${formatDateTime(log['timestamp'])}",
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
