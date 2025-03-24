@@ -208,6 +208,11 @@ class PatientDetailsScreen extends StatelessWidget {
           );
           int age = calculateAge(patientData['dob'] ?? "0000-00-00");
 
+          // Extract current health data
+          Map<String, dynamic> currentVitals = Map<String, dynamic>.from(
+            patientData['health_data'] ?? {},
+          );
+
           // Extract and sort logs in descending order
           List<Map<String, dynamic>> logs = [];
           if (patientData['logs'] != null) {
@@ -237,8 +242,31 @@ class PatientDetailsScreen extends StatelessWidget {
                   ),
                   Text("Blood Type: ${patientData['blood_type'] ?? 'N/A'}"),
                   const SizedBox(height: 20),
+
+                  // Current Vitals Section
                   const Text(
-                    "Logs (Descending Order):",
+                    "Current Vitals:",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  currentVitals.isNotEmpty
+                      ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Heart Rate: ${currentVitals['heart_rate']} bpm",
+                          ),
+                          Text(
+                            "Temperature: ${currentVitals['temperature']} °C",
+                          ),
+                          Text("SpO2: ${currentVitals['SpO2']}%"),
+                        ],
+                      )
+                      : const Text("No current vitals available."),
+                  const SizedBox(height: 20),
+
+                  // Logs Section
+                  const Text(
+                    "Logs:",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   logs.isEmpty
