@@ -1,57 +1,37 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'dashboard_screen.dart';
+import 'doctor_auth_screen.dart';
+import 'patient_auth_screen.dart';
 
-class AuthScreen extends StatefulWidget {
+class AuthScreen extends StatelessWidget {
   const AuthScreen({super.key});
-
-  @override
-  _AuthScreenState createState() => _AuthScreenState();
-}
-
-class _AuthScreenState extends State<AuthScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
-  String errorMessage = "";
-
-  void signIn() async {
-    try {
-      await _auth.signInWithEmailAndPassword(
-          email: emailController.text.trim(),
-          password: passwordController.text.trim());
-
-      Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (context) => DashboardScreen()));
-    } catch (e) {
-      setState(() {
-        errorMessage = "Login failed: ${e.toString()}";
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Login")),
+      appBar: AppBar(title: const Text("Login")),
       body: Padding(
-        padding: EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            TextField(
-              controller: emailController,
-              decoration: InputDecoration(labelText: "Email"),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const PatientAuthScreen()),
+                );
+              },
+              child: const Text("Login as Patient"),
             ),
-            TextField(
-              controller: passwordController,
-              decoration: InputDecoration(labelText: "Password"),
-              obscureText: true,
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DoctorAuthScreen()),
+                );
+              },
+              child: const Text("Login as Doctor"),
             ),
-            SizedBox(height: 10),
-            if (errorMessage.isNotEmpty)
-              Text(errorMessage, style: TextStyle(color: Colors.red)),
-            SizedBox(height: 20),
-            ElevatedButton(onPressed: signIn, child: Text("Login"))
           ],
         ),
       ),
