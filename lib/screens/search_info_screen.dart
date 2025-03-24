@@ -38,7 +38,6 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
         Map<String, dynamic> doctorData = Map<String, dynamic>.from(
           doctorSnapshot.value as Map,
         );
-
         setState(() {
           doctorName = doctorData['name'] ?? "Unknown";
           specialization = doctorData['spec'] ?? "Not Available";
@@ -46,44 +45,32 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
           numberOfPatients = patientIds.length;
         });
 
-        print("Patient IDs: $patientIds"); // Debug: Check Patient IDs
         fetchPatientData();
       }
     } catch (e) {
-      setState(() {
-        doctorName = "Error loading doctor data";
-      });
       print("Error fetching doctor data: $e");
     }
   }
 
   Future<void> fetchPatientData() async {
     try {
-      allPatientData.clear(); // Clear previous data to avoid duplicates
+      allPatientData.clear();
       filteredPatients.clear();
 
       for (String patientId in patientIds) {
-        print("Fetching patient data for $patientId");
-
         DatabaseReference patientRef = FirebaseDatabase.instance.ref(
           'patients/$patientId',
         );
         DataSnapshot patientSnapshot = await patientRef.get();
 
         if (patientSnapshot.exists) {
-          print("Data fetched for $patientId: ${patientSnapshot.value}");
           Map<String, dynamic> patientData = Map<String, dynamic>.from(
             patientSnapshot.value as Map,
           );
-
           setState(() {
             allPatientData.add({...patientData, 'id': patientId});
-            filteredPatients = List.from(
-              allPatientData,
-            ); // Ensure UI updates with all data
+            filteredPatients = List.from(allPatientData);
           });
-        } else {
-          print("No data found for patient: $patientId");
         }
       }
     } catch (e) {
@@ -99,6 +86,23 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
             return name.contains(query.toLowerCase());
           }).toList();
     });
+  }
+
+  Future<void> updateDetectFlag(String patientId, bool value) async {
+    try {
+      await FirebaseDatabase.instance
+          .ref('patients/$patientId/detect_flag')
+          .set(value);
+      print("Detect flag for $patientId updated to: $value");
+      setState(() {
+        final index = filteredPatients.indexWhere((p) => p['id'] == patientId);
+        if (index != -1) {
+          filteredPatients[index]['detect_flag'] = value;
+        }
+      });
+    } catch (e) {
+      print("Error updating detect flag: $e");
+    }
   }
 
   @override
@@ -144,11 +148,18 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
                   itemCount: filteredPatients.length,
                   itemBuilder: (context, index) {
                     var patient = filteredPatients[index];
+                    bool detectFlag = patient['detect_flag'] ?? false;
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 8),
                       child: ListTile(
                         title: Text("Name: ${patient['name']}"),
                         subtitle: Text("Patient ID: ${patient['id']}"),
+                        trailing: Switch(
+                          value: detectFlag,
+                          onChanged:
+                              (value) => updateDetectFlag(patient['id'], value),
+                          activeColor: Colors.green,
+                        ),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -171,11 +182,64 @@ class _SearchInfoScreenState extends State<SearchInfoScreen> {
   }
 }
 
-class PatientDetailsScreen extends StatelessWidget {
+// ----------------------------------------------------------
+// Patient Details Screen
+// ----------------------------------------------------------
+
+class PatientDetailsScreen extends StatefulWidget {
   final String patientId;
 
   const PatientDetailsScreen({Key? key, required this.patientId})
     : super(key: key);
+
+  @override
+  _PatientDetailsScreenState createState() => _PatientDetailsScreenState();
+}
+
+class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
+  Map<String, dynamic>? patientData;
+  bool detectFlag = false;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchPatientData();
+  }
+
+  Future<void> fetchPatientData() async {
+    try {
+      DatabaseReference patientRef = FirebaseDatabase.instance.ref(
+        'patients/${widget.patientId}',
+      );
+      DataSnapshot snapshot = await patientRef.get();
+
+      if (snapshot.exists && snapshot.value is Map) {
+        setState(() {
+          patientData = Map<String, dynamic>.from(snapshot.value as Map);
+          detectFlag = patientData?['detect_flag'] ?? false;
+        });
+      } else {
+        print("Patient data not found.");
+      }
+    } catch (e) {
+      print("Error fetching patient data: $e");
+    }
+  }
+
+  void toggleDetectFlag(bool value) async {
+    try {
+      DatabaseReference patientRef = FirebaseDatabase.instance.ref(
+        'patients/${widget.patientId}',
+      );
+      await patientRef.update({'detect_flag': value});
+      setState(() {
+        detectFlag = value;
+      });
+      print("Detect flag updated to: $value");
+    } catch (e) {
+      print("Error updating detect flag: $e");
+    }
+  }
 
   int calculateAge(String dob) {
     DateTime birthDate = DateTime.parse(dob);
@@ -189,125 +253,113 @@ class PatientDetailsScreen extends StatelessWidget {
     return age;
   }
 
+  String formatTimestamp(String timestamp) {
+    try {
+      final dateTime = DateTime.fromMillisecondsSinceEpoch(
+        int.parse(timestamp),
+      );
+      return "${dateTime.year}-${dateTime.month}-${dateTime.day} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}";
+    } catch (e) {
+      print("Error formatting timestamp: $e");
+      return "Invalid timestamp";
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (patientData == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    int age = calculateAge(patientData?['dob'] ?? "0000-00-00");
+
+    // Extract current vitals
+    Map<String, dynamic> currentVitals = Map<String, dynamic>.from(
+      patientData?['health_data'] ?? {},
+    );
+
+    // Extract and sort logs in descending order
+    List<Map<String, dynamic>> logs = [];
+    if (patientData?['logs'] != null) {
+      patientData!['logs'].forEach((key, value) {
+        logs.add(Map<String, dynamic>.from(value));
+      });
+      logs.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Patient Details')),
-      body: FutureBuilder<DataSnapshot>(
-        future: FirebaseDatabase.instance.ref('patients/$patientId').get(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data?.value == null) {
-            return const Center(child: Text("Patient data not found."));
-          }
+      appBar: AppBar(
+        title: const Text('Patient Details'),
+        actions: [
+          Row(
+            children: [
+              const Text("Detect Flag"),
+              Switch(value: detectFlag, onChanged: toggleDetectFlag),
+            ],
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Name: ${patientData?['name']}"),
+            Text("Age: $age"),
+            Text("Sex: ${patientData?['sex'] ?? 'N/A'}"),
+            Text("Height: ${patientData?['height'] ?? 'N/A'} cm"),
+            Text("Weight: ${patientData?['weight'] ?? 'N/A'} kg"),
+            Text("Fitness Level: ${patientData?['fitness_level'] ?? 'N/A'}"),
+            Text("Blood Type: ${patientData?['blood_type'] ?? 'N/A'}"),
 
-          Map<String, dynamic> patientData = Map<String, dynamic>.from(
-            snapshot.data!.value as Map,
-          );
-          int age = calculateAge(patientData['dob'] ?? "0000-00-00");
-
-          // Extract current health data
-          Map<String, dynamic> currentVitals = Map<String, dynamic>.from(
-            patientData['health_data'] ?? {},
-          );
-
-          // Extract and sort logs in descending order
-          List<Map<String, dynamic>> logs = [];
-          if (patientData['logs'] != null) {
-            patientData['logs'].forEach((key, value) {
-              logs.add({
-                ...Map<String, dynamic>.from(value),
-                'timestamp': int.parse(key),
-              });
-            });
-
-            logs.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
-          }
-
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Name: ${patientData['name']}"),
-                  Text("Age: $age"),
-                  Text("Sex: ${patientData['sex'] ?? 'N/A'}"),
-                  Text("Height: ${patientData['height'] ?? 'N/A'} cm"),
-                  Text("Weight: ${patientData['weight'] ?? 'N/A'} kg"),
-                  Text(
-                    "Fitness Level: ${patientData['fitness_level'] ?? 'N/A'}",
-                  ),
-                  Text("Blood Type: ${patientData['blood_type'] ?? 'N/A'}"),
-                  const SizedBox(height: 20),
-
-                  // Current Vitals Section
-                  const Text(
-                    "Current Vitals:",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  currentVitals.isNotEmpty
-                      ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Heart Rate: ${currentVitals['heart_rate']} bpm",
-                          ),
-                          Text(
-                            "Temperature: ${currentVitals['temperature']} °C",
-                          ),
-                          Text("SpO2: ${currentVitals['SpO2']}%"),
-                        ],
-                      )
-                      : const Text("No current vitals available."),
-                  const SizedBox(height: 20),
-
-                  // Logs Section
-                  const Text(
-                    "Logs:",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  logs.isEmpty
-                      ? const Text("No logs available.")
-                      : ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: logs.length,
-                        itemBuilder: (context, index) {
-                          final log = logs[index];
-                          DateTime dateTime =
-                              DateTime.fromMillisecondsSinceEpoch(
-                                log['timestamp'],
-                              );
-                          String formattedDate =
-                              "${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}";
-
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            child: ListTile(
-                              title: Text("Timestamp: $formattedDate"),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("Heart Rate: ${log['heart_rate']} bpm"),
-                                  Text("Temperature: ${log['temperature']} °C"),
-                                  Text("SpO2: ${log['SpO2']}%"),
-                                  Text(
-                                    "Issues Detected: ${log['issues_detected'].join(', ')}",
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                ],
-              ),
+            const SizedBox(height: 20),
+            const Text(
+              "Current Vitals",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-          );
-        },
+            Text("Heart Rate: ${currentVitals['heart_rate'] ?? 'N/A'} bpm"),
+            Text("Temperature: ${currentVitals['temperature'] ?? 'N/A'} °C"),
+            Text("SpO2: ${currentVitals['SpO2'] ?? 'N/A'} %"),
+
+            const SizedBox(height: 20),
+            const Text(
+              "Health Logs (Descending Order)",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            logs.isEmpty
+                ? const Text("No logs available.")
+                : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: logs.length,
+                  itemBuilder: (context, index) {
+                    var log = logs[index];
+                    String formattedTime = formatTimestamp(
+                      log['timestamp'].toString(),
+                    );
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      child: ListTile(
+                        title: Text("Time: $formattedTime"),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Heart Rate: ${log['heart_rate']} bpm"),
+                            Text("Temperature: ${log['temperature']} °C"),
+                            Text("SpO2: ${log['SpO2']} %"),
+                            if (log['issues_detected'] != null)
+                              Text(
+                                "Issues: ${log['issues_detected'].join(', ')}",
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+          ],
+        ),
       ),
     );
   }
