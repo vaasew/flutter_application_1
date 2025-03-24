@@ -208,6 +208,19 @@ class PatientDetailsScreen extends StatelessWidget {
           );
           int age = calculateAge(patientData['dob'] ?? "0000-00-00");
 
+          // Extract and sort logs in descending order
+          List<Map<String, dynamic>> logs = [];
+          if (patientData['logs'] != null) {
+            patientData['logs'].forEach((key, value) {
+              logs.add({
+                ...Map<String, dynamic>.from(value),
+                'timestamp': int.parse(key),
+              });
+            });
+
+            logs.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
+          }
+
           return Padding(
             padding: const EdgeInsets.all(16.0),
             child: SingleChildScrollView(
@@ -223,6 +236,45 @@ class PatientDetailsScreen extends StatelessWidget {
                     "Fitness Level: ${patientData['fitness_level'] ?? 'N/A'}",
                   ),
                   Text("Blood Type: ${patientData['blood_type'] ?? 'N/A'}"),
+                  const SizedBox(height: 20),
+                  const Text(
+                    "Logs (Descending Order):",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  logs.isEmpty
+                      ? const Text("No logs available.")
+                      : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: logs.length,
+                        itemBuilder: (context, index) {
+                          final log = logs[index];
+                          DateTime dateTime =
+                              DateTime.fromMillisecondsSinceEpoch(
+                                log['timestamp'],
+                              );
+                          String formattedDate =
+                              "${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}";
+
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            child: ListTile(
+                              title: Text("Timestamp: $formattedDate"),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Heart Rate: ${log['heart_rate']} bpm"),
+                                  Text("Temperature: ${log['temperature']} °C"),
+                                  Text("SpO2: ${log['SpO2']}%"),
+                                  Text(
+                                    "Issues Detected: ${log['issues_detected'].join(', ')}",
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                 ],
               ),
             ),
